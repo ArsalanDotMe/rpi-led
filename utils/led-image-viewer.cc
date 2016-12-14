@@ -333,6 +333,8 @@ int main(int argc, char *argv[]) {
     matrix->ApplyStaticTransformer(rgb_matrix::RotateTransformer(angle));
   }
 
+  matrix->ApplyStaticTransformer(rgb_matrix::MyNewTransformer());
+
   printf("Size: %dx%d. Hardware gpio mapping: %s\n",
          matrix->width(), matrix->height(), matrix_options.hardware_mapping);
 
