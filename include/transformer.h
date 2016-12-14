@@ -24,6 +24,25 @@
 
 namespace rgb_matrix {
 
+  /* Add to transformer.h to add new transformer class.
+*/
+
+class MyNewTransformer : public CanvasTransformer {
+public:
+  MyNewTransformer();
+  virtual ~MyNewTransformer();
+
+  virtual Canvas *Transform(Canvas *output);
+
+private:
+  class TransformCanvas;
+
+  TransformCanvas *const canvas_;
+};
+
+/***********************************************************************************************/
+
+
 // Transformer for RotateCanvas
 class RotateTransformer : public CanvasTransformer {
 public:
@@ -113,6 +132,19 @@ private:
   UArrangementTransformer arrange_;
   RotateTransformer rotated_;
 }  __attribute__((deprecated));
+
+class Snake8x2Transformer : public CanvasTransformer {
+public:
+  Snake8x2Transformer();
+  virtual ~Snake8x2Transformer();
+
+  virtual Canvas *Transform(Canvas *output);
+
+private:
+  class TransformCanvas;
+
+  TransformCanvas *const canvas_;
+};
 
 } // namespace rgb_matrix
 

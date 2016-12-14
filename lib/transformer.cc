@@ -20,6 +20,153 @@
 #include "transformer.h"
 
 namespace rgb_matrix {
+/********************************/
+/* Snake 8x2 Transformer Canvas */
+/********************************/
+class Snake8x2Transformer::TransformCanvas : public Canvas {
+public:
+  TransformCanvas() : delegatee_(NULL) {}
+
+  void SetDelegatee(Canvas* delegatee);
+
+  virtual void Clear();
+  virtual void Fill(uint8_t red, uint8_t green, uint8_t blue);
+  virtual int width() const;
+  virtual int height() const;
+  virtual void SetPixel(int x, int y, uint8_t red, uint8_t green, uint8_t blue);
+
+private:
+  Canvas *delegatee_;
+};
+
+void Snake8x2Transformer::TransformCanvas::SetDelegatee(Canvas* delegatee) {
+  delegatee_ = delegatee;
+}
+
+void Snake8x2Transformer::TransformCanvas::Clear() {
+  delegatee_->Clear();
+}
+
+void Snake8x2Transformer::TransformCanvas::Fill(uint8_t red, uint8_t green, uint8_t blue) {
+  delegatee_->Fill(red, green, blue);
+}
+
+int Snake8x2Transformer::TransformCanvas::width() const {
+  return delegatee_->width() / 2;
+}
+
+int Snake8x2Transformer::TransformCanvas::height() const {
+  return delegatee_->height() * 2;
+}
+
+void Snake8x2Transformer::TransformCanvas::SetPixel(int x, int y, uint8_t red, uint8_t green, uint8_t blue) {
+  int new_x;
+  int new_y;
+
+  new_x = ((x / 8) * 16) + (x % 8);
+  if ((y & 4) == 0) {
+    new_x += 8;
+  }
+
+  new_y = ((y / 8) * 4) + (y % 4);
+
+  delegatee_->SetPixel(new_x, new_y, red, green, blue);
+}
+
+ /********************************/
+/* My New Transformer Canvas */
+/********************************/
+class MyNewTransformer::TransformCanvas : public Canvas {
+public:
+  TransformCanvas() : delegatee_(NULL) {}
+
+  void SetDelegatee(Canvas* delegatee);
+
+  virtual void Clear();
+  virtual void Fill(uint8_t red, uint8_t green, uint8_t blue);
+  virtual int width() const;
+  virtual int height() const;
+  virtual void SetPixel(int x, int y, uint8_t red, uint8_t green, uint8_t blue);
+
+private:
+  Canvas *delegatee_;
+};
+
+void MyNewTransformer::TransformCanvas::SetDelegatee(Canvas* delegatee) {
+  delegatee_ = delegatee;
+}
+
+void MyNewTransformer::TransformCanvas::Clear() {
+  delegatee_->Clear();
+}
+
+void MyNewTransformer::TransformCanvas::Fill(uint8_t red, uint8_t green, uint8_t blue) {
+  delegatee_->Fill(red, green, blue) /* add any necessary transform of color here */;
+}
+
+int MyNewTransformer::TransformCanvas::width() const {
+  return delegatee_->width() / 2 /* add any necessary transform of width here */;
+}
+
+int MyNewTransformer::TransformCanvas::height() const {
+  return delegatee_->height()/* add any necessary transform of height here */;
+}
+
+void MyNewTransformer::TransformCanvas::SetPixel(int x, int y, uint8_t red, uint8_t green, uint8_t blue) {
+  int new_x = x;
+  int new_y = y;
+
+  // printf("\nGot x:y as %i:%i\n", x, y);
+  
+  // Verified that the transformer is active
+  // new_y = 2;
+  // new_x = 2; 
+  
+  new_x = x + (((x/32) + (1 - ((y/8)%2))) * 32);
+  // if (((y/8)%2) == 0) {
+  //   new_x = x + (((x/32)+1)*32);
+  //   // if (x >= 0 && x < 32) {
+  //   //   new_x = x + 32;
+  //   // } else if (x >= 32 && x < 64) {
+  //   //   new_x = x + 64;
+  //   // } else if (x >=64 && x < 96) {
+  //   //   new_x = x + 96;
+  //   // } else if (x >= 96 && x < 128) {
+  //   //   new_x = x + 128;
+  //   // }
+  // } else {
+  //   new_x = x + ((x/32)*32);
+  //   // if (x >= 0 && x < 32) {
+  //   //   new_x = x;
+  //   // } else if (x >= 32 && x < 64) {
+  //   //   new_x = x + 32;
+  //   // } else if (x >= 64 && x < 96) {
+  //   //   new_x = x + 64;
+  //   // } else if (x >= 96 && x < 128) {
+  //   //   new_x = x + 96;
+  //   // }
+  // }
+
+  // printf("\nNew pixels: %i, %i :: %i,%i,%i\n", new_x, new_y, red, green, blue);
+  delegatee_->SetPixel(new_x, new_y, red, green, blue);
+}
+
+MyNewTransformer::MyNewTransformer()
+  : canvas_(new TransformCanvas()) {
+}
+
+MyNewTransformer::~MyNewTransformer() {
+  delete canvas_;
+}
+
+Canvas *MyNewTransformer::Transform(Canvas *output) {
+  assert(output != NULL);
+
+  canvas_->SetDelegatee(output);
+  return canvas_;
+}
+
+/***********************************************************************************************/
 
 /*****************************/
 /* Rotate Transformer Canvas */
