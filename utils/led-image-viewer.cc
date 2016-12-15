@@ -276,9 +276,11 @@ int main(int argc, char *argv[]) {
   }
 
   local.sun_family = AF_UNIX;
-  strcpy(local.sun_path, SOCK_PATH);
-  unlink(local.sun_path);
-  sockLen = strlen(local.sun_path) + sizeof(local.sun_family);
+  strcpy(local.sun_path + 1, SOCK_PATH);
+  local.sun_path[0] = 0;
+  //unlink(local.sun_path);
+  sockLen = strlen(SOCK_PATH) + sizeof(local.sun_family) + 1;
+  printf("Binding to unix socket %s", SOCK_PATH);
   if (bind(ownSocket, (struct sockaddr *)&local, sockLen) < 0) {
     perror("bind");
     exit(1);
