@@ -339,6 +339,7 @@ int main(int argc, char *argv[]) {
       ++IMG_COUNTER;
       FileInfoPtr file_info = prepareFile(clientMessage, matrix);
       std::thread dp(DisplayPicture, file_info->frames, matrix);
+      dp.detach();
 
       if (send(clientSocket, clientMessage, numBytesReceived, 0) < 0) {
         perror("send");
