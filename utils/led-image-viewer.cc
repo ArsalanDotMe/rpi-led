@@ -37,6 +37,17 @@
 #include <Magick++.h>
 #include <magick/image.h>
 
+#include <errno.h>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
+#include <thread>
+
+#define SOCK_PATH "rumour.media"
+unsigned int IMG_COUNTER = 0;
+
 using rgb_matrix::GPIO;
 using rgb_matrix::Canvas;
 using rgb_matrix::FrameCanvas;
@@ -160,24 +171,18 @@ static bool LoadImageAndScale(const char *filename,
     return true;
 }
 
-void DisplayAnimation(const PreprocessedList &frames,
-                      tmillis_t duration_ms, int loops, RGBMatrix *matrix) {
-    const tmillis_t end_time_ms = GetTimeInMillis() + duration_ms;
-    if (frames.size() == 1)
-        loops = 1;   // If there is no animation, nothing to repeat.
-    for (int k = 0;
-         (loops < 0 || k < loops)
-             && !interrupt_received
-             && GetTimeInMillis() < end_time_ms;
-         ++k) {
-        for (unsigned int i = 0; i < frames.size() && !interrupt_received; ++i) {
-            if (interrupt_received || GetTimeInMillis() > end_time_ms)
-                break;
-            PreprocessedFrame *frame = frames[i];
-            matrix->SwapOnVSync(frame->canvas());
-            SleepMillis(frame->delay_millis());
-        }
+void DisplayPicture(const PreprocessedList &frames, RGBMatrix *matrix) {
+  const unsigned int started_counter = IMG_COUNTER;
+  while (!interrupt_received && started_counter == IMG_COUNTER) {
+    for (unsigned int i = 0; i < frames.size() && !interrupt_received; ++i) {
+      if (interrupt_received) {
+        break;
+      }
+      PreprocessedFrame *frame = frames[i];
+      matrix->SwapOnVSync(frame->canvas());
+      SleepMillis(frame->delay_millis());
     }
+  }
 }
 
 static int usage(const char *progname) {
@@ -228,8 +233,63 @@ struct FileInfo {
   PreprocessedList frames; // For animations: possibly multiple frames.
 };
 
+typedef std::shared_ptr<FileInfo> FileInfoPtr;
+
+FileInfoPtr prepareFile(const char * filename, RGBMatrix* matrix) {
+  // These parameters are needed once we do scrolling.
+  const bool fill_width = false;
+  const bool fill_height = false;
+  std::vector<Magick::Image> image_sequence;
+  if (!LoadImageAndScale(filename, matrix->width(), matrix->height(),
+                  fill_width, fill_height, &image_sequence)) {
+    FileInfoPtr ptr;
+    return ptr;
+  }
+  FileInfoPtr file_info(new FileInfo());
+  // FileInfo *file_info = new FileInfo();
+  ImageParams image_params;
+  file_info->params = image_params;
+  // Convert to preprocessed frames.
+  for (size_t i = 0; i < image_sequence.size(); ++i) {
+    FrameCanvas *canvas = matrix->CreateFrameCanvas();
+    file_info->frames.push_back(
+      new PreprocessedFrame(image_sequence[i], false, canvas));
+  }
+  // The 'animation delay' of a single image is the time to the next image.
+  if (file_info->frames.size() == 1) {
+    file_info->frames.back()->set_delay(file_info->params.wait_ms);
+  }
+  return file_info;
+}
+
 int main(int argc, char *argv[]) {
   Magick::InitializeMagick(*argv);
+
+  int ownSocket, clientSocket, sockLen;
+  unsigned int sockT;
+  struct sockaddr_un local, remote;
+  char clientMessage[512];
+
+  if ((ownSocket = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
+    perror("socket");
+    exit(1);
+  }
+
+  local.sun_family = AF_UNIX;
+  strcpy(local.sun_path, SOCK_PATH);
+  unlink(local.sun_path);
+  sockLen = strlen(local.sun_path) + sizeof(local.sun_family);
+  if (bind(ownSocket, (struct sockaddr *)&local, sockLen) == -1) {
+    perror("bind");
+    exit(1);
+  }
+
+  if (listen(ownSocket, 5) == -1) {
+    perror("listen");
+    exit(1);
+  }
+
+  // Here starts the old code
 
   RGBMatrix::Options matrix_options;
   rgb_matrix::RuntimeOptions runtime_opt;
@@ -238,175 +298,50 @@ int main(int argc, char *argv[]) {
     return usage(argv[0]);
   }
 
-  bool do_forever = false;
-  bool do_center = false;
-  bool do_shuffle = false;
-  bool large_display = false;  // 64x64 made out of 4 in sequence.
-  int angle = -361;
-
-  // We remember ImageParams for each image, which will change whenever
-  // there is a flag modifying them. This map keeps track of filenames
-  // and their image params (also for unrelated elements of argv[], but doesn't
-  // matter).
-  // We map the pointer instad of the string of the argv parameter so that
-  // we can have two times the same image on the commandline list with different
-  // parameters.
-  std::map<const void *, struct ImageParams> filename_params;
-
-  // Set defaults.
-  ImageParams img_param;
-  for (int i = 0; i < argc; ++i) {
-    filename_params[argv[i]] = img_param;
-  }
-
-  int opt;
-  while ((opt = getopt(argc, argv, "w:t:l:fr:c:P:LhCR:s")) != -1) {
-    switch (opt) {
-    case 'w':
-      img_param.wait_ms = roundf(atof(optarg) * 1000.0f);
-      break;
-    case 't':
-      img_param.anim_duration_ms = roundf(atof(optarg) * 1000.0f);
-      break;
-    case 'l':
-      img_param.loops = atoi(optarg);
-      break;
-    case 'f':
-      do_forever = true;
-      break;
-    case 'C':
-      do_center = true;
-      break;
-    case 's':
-      do_shuffle = true;
-      break;
-    case 'r':
-      matrix_options.rows = atoi(optarg);
-      break;
-    case 'c':
-      matrix_options.chain_length = atoi(optarg);
-      break;
-    case 'P':
-      matrix_options.parallel = atoi(optarg);
-      break;
-    case 'L':
-      if (matrix_options.chain_length == 1) {
-        // If this is still default, force the 64x64 arrangement.
-        matrix_options.chain_length = 4;
-      }
-      large_display = true;
-      break;
-    case 'R':
-      angle = atoi(optarg);
-      break;
-    case 'h':
-    default:
-      return usage(argv[0]);
-    }
-
-    // Starting from the current file, set all the remaining files to
-    // the latest change.
-    for (int i = optind; i < argc; ++i) {
-      filename_params[argv[i]] = img_param;
-    }
-  }
-
-  const int filename_count = argc - optind;
-  if (filename_count == 0) {
-    fprintf(stderr, "Expected image filename.\n");
-    return usage(argv[0]);
-  }
-
-  // Prepare matrix
   RGBMatrix *matrix = CreateMatrixFromOptions(matrix_options, runtime_opt);
   if (matrix == NULL)
     return 1;
-
-  if (large_display) {
-    // Mapping the coordinates of a 32x128 display mapped to a square of 64x64,
-    // or any other U-shape.
-    matrix->ApplyStaticTransformer(rgb_matrix::UArrangementTransformer(
-                                     matrix_options.parallel));
-  }
-
-  if (angle >= -360) {
-    matrix->ApplyStaticTransformer(rgb_matrix::RotateTransformer(angle));
-  }
 
   matrix->ApplyStaticTransformer(rgb_matrix::MyNewTransformer());
 
   printf("Size: %dx%d. Hardware gpio mapping: %s\n",
          matrix->width(), matrix->height(), matrix_options.hardware_mapping);
 
-  // These parameters are needed once we do scrolling.
-  const bool fill_width = false;
-  const bool fill_height = false;
-
-  fprintf(stderr, "Load images...\n");
-  // Preparing all the images beforehand as the Pi might be too slow to
-  // be quickly switching between these. So preprocess.
-  std::vector<FileInfo*> file_imgs;
-  for (int imgarg = optind; imgarg < argc; ++imgarg) {
-      const char *filename = argv[imgarg];
-
-      std::vector<Magick::Image> image_sequence;
-      if (!LoadImageAndScale(filename, matrix->width(), matrix->height(),
-                             fill_width, fill_height, &image_sequence)) {
-        continue;
-      }
-
-      FileInfo *file_info = new FileInfo();
-      file_info->params = filename_params[filename];
-      // Convert to preprocessed frames.
-      for (size_t i = 0; i < image_sequence.size(); ++i) {
-        FrameCanvas *canvas = matrix->CreateFrameCanvas();
-        file_info->frames.push_back(
-          new PreprocessedFrame(image_sequence[i], do_center, canvas));
-      }
-      // The 'animation delay' of a single image is the time to the next image.
-      if (file_info->frames.size() == 1) {
-        file_info->frames.back()->set_delay(file_info->params.wait_ms);
-      }
-      file_imgs.push_back(file_info);
-  }
-
-  // Some parameter sanity adjustments.
-  if (file_imgs.empty()) {
-    // e.g. if all files could not be interpreted as image.
-    fprintf(stderr, "No image could be loaded.\n");
-    return 1;
-  } else if (file_imgs.size() == 1) {
-    // Single image: show forever.
-    file_imgs[0]->params.wait_ms = distant_future;
-  } else {
-    for (size_t i = 0; i < file_imgs.size(); ++i) {
-      ImageParams &params = file_imgs[i]->params;
-      // Forever animation ? Set to loop only once, otherwise that animation
-      // would just run forever, stopping all the images after it.
-      if (params.loops < 0 && params.anim_duration_ms == distant_future) {
-        params.loops = 1;
-      }
-    }
-  }
-
-  fprintf(stderr, "Display.\n");
+  // fprintf(stderr, "Display.\n");
 
   signal(SIGTERM, InterruptHandler);
   signal(SIGINT, InterruptHandler);
 
-  do {
-    if (do_shuffle) {
-      std::random_shuffle(file_imgs.begin(), file_imgs.end());
+  while(!interrupt_received) {
+    printf("Waiting for a connection...\n");
+    sockT = sizeof(remote);
+    if ((clientSocket = accept(ownSocket, (struct sockaddr *)&remote, &sockT)) == -1) {
+      perror("accept");
+      exit(1);
     }
-    for (size_t i = 0; i < file_imgs.size() && !interrupt_received; ++i) {
-      const FileInfo *file = file_imgs[i];
 
-      const tmillis_t duration = ((file->frames.size() == 1)
-                                  ? file->params.wait_ms
-                                  : file->params.anim_duration_ms);
-      DisplayAnimation(file->frames, duration, file->params.loops, matrix);
-    }
-  } while (do_forever && !interrupt_received);
+    printf("Connected.\n");
+    bool done = false;
+    do {
+      int numBytesReceived = recv(clientSocket, clientMessage, 512, 0);
+      if (numBytesReceived < 0 || interrupt_received) {
+        done = true;
+        perror("recv");
+        continue;
+      }
+
+      // clientMessage now contains the filename of the ad we want to play
+      ++IMG_COUNTER;
+      FileInfoPtr file_info = prepareFile(clientMessage, matrix);
+      std::thread dp(DisplayPicture, file_info->frames, matrix);
+
+      if (send(clientSocket, clientMessage, numBytesReceived, 0) < 0) {
+        perror("send");
+      }
+    } while (!done && !interrupt_received);
+
+    close(clientSocket);
+  }
 
   if (interrupt_received) {
     fprintf(stderr, "Caught signal. Exiting.\n");
