@@ -279,7 +279,7 @@ int main(int argc, char *argv[]) {
   strcpy(local.sun_path, SOCK_PATH);
   unlink(local.sun_path);
   sockLen = strlen(local.sun_path) + sizeof(local.sun_family);
-  if (bind(ownSocket, (struct sockaddr *)&local, sockLen) == -1) {
+  if (bind(ownSocket, (struct sockaddr *)&local, sockLen) < 0) {
     perror("bind");
     exit(1);
   }
@@ -308,10 +308,7 @@ int main(int argc, char *argv[]) {
          matrix->width(), matrix->height(), matrix_options.hardware_mapping);
 
   // fprintf(stderr, "Display.\n");
-
-  signal(SIGTERM, InterruptHandler);
-  signal(SIGINT, InterruptHandler);
-
+  bool signal_set = false;
   while(!interrupt_received) {
     printf("Waiting for a connection...\n");
     sockT = sizeof(remote);
@@ -320,6 +317,12 @@ int main(int argc, char *argv[]) {
       exit(1);
     }
 
+    if (signal_set == false) {
+      signal(SIGTERM, InterruptHandler);
+      signal(SIGINT, InterruptHandler);
+      signal_set = true;
+    }
+    
     printf("Connected.\n");
     bool done = false;
     do {
