@@ -338,11 +338,19 @@ int main(int argc, char *argv[]) {
       // clientMessage now contains the filename of the ad we want to play
       ++IMG_COUNTER;
       FileInfoPtr file_info = prepareFile(clientMessage, matrix);
-      std::thread dp(DisplayPicture, file_info->frames, matrix);
-      dp.detach();
+      if (file_info != nullptr_t) {
+        std::thread dp(DisplayPicture, file_info->frames, matrix);
+        dp.detach();
 
-      if (send(clientSocket, clientMessage, numBytesReceived, 0) < 0) {
-        perror("send");
+        if (send(clientSocket, clientMessage, numBytesReceived, 0) < 0) {
+          perror("send");
+        }
+      } else {
+        char errorMessage[612];
+        sprintf(errorMessage, "err::InvalidImageAddress::%s", clientMessage)
+        if (send(clientSocket, clientMessage, numBytesReceived, 0) < 0) {
+          perror("send");
+        }
       }
     } while (!done && !interrupt_received);
 
