@@ -339,8 +339,12 @@ int main(int argc, char *argv[]) {
       ++IMG_COUNTER;
       FileInfoPtr file_info = prepareFile(clientMessage, matrix);
       if (file_info) {
-        std::thread dp(DisplayPicture, file_info->frames, matrix);
-        dp.detach();
+        try {
+          std::thread dp(DisplayPicture, file_info->frames, matrix);
+          dp.detach();
+        } catch (...) {
+          printf("Some exception was caught while accessing pointer");
+        }
 
         if (send(clientSocket, clientMessage, numBytesReceived, 0) < 0) {
           perror("send");
