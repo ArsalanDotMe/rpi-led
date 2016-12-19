@@ -347,7 +347,7 @@ int main(int argc, char *argv[]) {
         }
       } else {
         char errorMessage[612];
-        sprintf(errorMessage, "err::InvalidImageAddress::%s", clientMessage)
+        sprintf(errorMessage, "err::InvalidImageAddress::%s", clientMessage);
         if (send(clientSocket, clientMessage, numBytesReceived, 0) < 0) {
           perror("send");
         }
