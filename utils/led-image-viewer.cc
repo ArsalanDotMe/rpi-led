@@ -338,7 +338,7 @@ int main(int argc, char *argv[]) {
       // clientMessage now contains the filename of the ad we want to play
       ++IMG_COUNTER;
       FileInfoPtr file_info = prepareFile(clientMessage, matrix);
-      if (file_info != nullptr_t) {
+      if (file_info) {
         std::thread dp(DisplayPicture, file_info->frames, matrix);
         dp.detach();
 
